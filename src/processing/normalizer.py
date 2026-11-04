@@ -1,59 +1,43 @@
-import re
 from unidecode import unidecode
 
 class PreprintNormalizer:
-    """Responsável por limpar, normalizar e mapear os dados brutos da OpenAlex."""
+    """Responsável por limpar, normalizar e mapear os metadados dos preprints."""
     
     @staticmethod
     def clean_text(text: str) -> str:
+        """Remove acentos, converte para minúsculas e remove espaços excedentes."""
         if not text:
             return ""
-        # Remove acentos e converte para minúsculas para padronização básica
         return unidecode(text).strip().lower()
 
     @staticmethod
-    def map_to_cnpq_area(openalex_concepts: list) -> str:
+    def map_to_cnpq_area(concepts: list) -> str:
         """
-        Mapeia conceitos/tópicos da OpenAlex para as Grandes Áreas do CNPq.
-        (Ajustável conforme o dicionário de mapeamento do seu escopo de pesquisa).
+        Mapeia os conceitos/tópicos retornados pela OpenAlex
+        para as Grandes Áreas do Conhecimento do CNPq.
         """
-        if not openalex_concepts:
-            str_area = "Multidisciplinar"
-            return str_area
+        if not concepts:
+            return "Multidisciplinar / Outras"
             
-        # Exemplo simplificado de mapeamento baseado nos campos da OpenAlex
-        top_concept = openalex_concepts[0].get("display_name", "").lower()
+        # Analisa o primeiro conceito principal fornecido pela API
+        top_concept = concepts[0].get("display_name", "").lower() if isinstance(concepts[0], dict) else str(concepts[0]).lower()
         
-        if any(term in top_concept for term in ["computer", "software", "algorithm", "computational"]):
+        if any(term in top_concept for term in ["computer", "software", "algorithm", "engineering", "math", "physics", "chemistry"]):
             return "Ciências Exatas e da Terra"
-        elif any(term in top_concept for term in ["medicine", "health", "biolog", "clinic"]):
+        elif any(term in top_concept for term in ["medicine", "health", "biology", "clinical", "biochem"]):
             return "Ciências da Saúde"
-        elif any(term in top_concept for term in ["social", "sociolog", "educat", "econo"]):
+        elif any(term in top_concept for term in ["social", "sociology", "education", "economics", "law", "psycholog"]):
             return "Ciências Humanas / Sociais Aplicadas"
-        
+        elif any(term in top_concept for term in ["agriculture", "agronom", "forestry"]):
+            return "Ciências Agrárias"
+            
         return "Outras Áreas"
 
-    def normalize_work(self, raw_work: dict) -> dict:
-        """Transforma um registro bruto da OpenAlex em um dicionário limpo para inserção."""
-        authors = [
-            {
-                "author_id": author.get("author", {}).get("id"),
-                "name": author.get("author", {}).get("display_name"),
-                "orcid": author.get("author", {}).get("orcid"),
-                "institution": author.get("institutions", [{}])[0].get("display_name") if author.get("institutions") else None
-            }
-            for author in raw_work.get("authorships", [])
-        ]
-
-        normalized = {
-            "id": raw_work.get("id"),
-            "doi": raw_work.get("doi"),
-            "title": raw_work.get("title"),
-            "publication_date": raw_work.get("publication_date"),
-            "year": raw_work.get("publication_year"),
-            "type": raw_work.get("type"),
-            "cnpq_area": self.map_to_cnpq_area(raw_work.get("concepts", [])),
-            "authors": authors,
-            "has_orcid": any(a["orcid"] is not None for a in authors)
+    def normalize_record(self, raw_data: dict) -> dict:
+        """Aplica normalização completa em um registro bruto."""
+        return {
+            "id": raw_data.get("id"),
+            "title": raw_data.get("title", "").strip(),
+            "cnpq_area": self.map_to_cnpq_area(raw_data.get("concepts", [])),
+            "has_orcid": int(any(auth.get("author", {}).get("orcid") is not None for auth in raw_data.get("authorships", [])))
         }
-        return normalized
